@@ -33,7 +33,7 @@
   /* Fonts */
   --font-display: "Fragment Mono", "Courier New", monospace;
   --font-body: "Syne", sans-serif;
-  --font-mono: "Fragment Mono", "Courier New", monospace;
+  --font-mono: Sora, "Fragment Mono", "Courier New", monospace;
 
   /* Animations — v4 auto-generates animate-* utilities from these */
   --animate-fade-in-up: fade-in-up 0.8s ease forwards;

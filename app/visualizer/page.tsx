@@ -1,45 +1,47 @@
 "use client";
-import EventSidebar from "@/components/EventSidebar";
+
+import { useEffect } from "react";
 import { sdk } from "@/lib/somnia";
-import {
-  defineChain,
-  encodeFunctionData,
-  erc721Abi,
-  decodeEventLog,
-  erc20Abi,
-  decodeFunctionResult,
-} from "viem";
+import { useSomletStore } from "@/store/useSomletStore";
+import { SomletSidebar } from "@/components/visualizer/SomletSidebar";
+import { toast } from "sonner";
 
 const Visualizer = () => {
-  try {
-    // const setupSubscription = async () => {
-    //   await sdk.subscribe({
-    //     ethCalls: [],
-    //     onData: (data) => {
-    //       console.log("data: ", data);
-    //       // const decodedLog = decodeEventLog({
-    //       //   abi: erc20Abi, // Or your custom ABI
-    //       //   topics: data.result.topics,
-    //       //   data: data.result.data,
-    //       // });
-    //       // console.log("data: ", data);
-    //       // const decodedFunctionResult = decodeFunctionResult({
-    //       //   abi: erc721Abi, // Match the call's ABI
-    //       //   functionName: "balanceOf",
-    //       //   data: data.result.simulationResults[0], // First call's result
-    //       // });
-    //       // // return decodedFunctionResult;
-    //       // console.log("Decoded Event:", decodedLog); // e.g., { eventName: 'Transfer', args: { from, to, value } }
-    //       // console.log("Decoded Balance:", decodedFunctionResult); // e.g., 42n
-    //     },
-    //   });
-    // };
-    // setupSubscription();
-  } catch (error) {
-    console.error("Failed to connect to Somnia WebSocket:", error);
-  }
+  const addEvent = useSomletStore((s) => s.addEvent);
 
-  return <div>{/* <EventSidebar /> */}</div>;
+  useEffect(() => {
+    const setupSubscription = async () => {
+      try {
+        await sdk.subscribe({
+          ethCalls: [],
+          onData: (data) => {
+            addEvent(data);
+          },
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (error: any) {
+        console.error("Failed to connect to Somnia WebSocket:", error);
+        toast.error("Failed to connect to Somnia WebSocket:", error);
+      }
+    };
+
+    // setupSubscription();
+  }, [addEvent]);
+
+  return (
+    <div className="flex h-screen bg-background overflow-hidden">
+      {/* ── Phaser world (left) — placeholder until game is built ──────── */}
+      <div className="flex-1 relative">
+        {/* Game canvas will be mounted here by Phaser */}
+        <div id="phaser-container" className="w-full h-full" />
+      </div>
+
+      {/* ── Sidebar (right) ─────────────────────────────────────────────── */}
+      <div className="w-80 shrink-0 h-full">
+        <SomletSidebar />
+      </div>
+    </div>
+  );
 };
 
 export default Visualizer;
