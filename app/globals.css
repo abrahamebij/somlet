@@ -10,9 +10,9 @@
   --color-border: #1e1e2e;
   --color-border-subtle: #13131a;
 
-  --color-foreground: #e8e6f0;
-  --color-foreground-muted: #6b6880;
-  --color-foreground-faint: #2e2c3a;
+   --color-foreground: #e8e6f0;
+  --color-foreground-muted: #9f9daf;
+  --color-foreground-faint: #686383;
 
   --color-accent: #c8f03a;
   --color-accent-dim: #7a9122;
@@ -31,9 +31,9 @@
   --color-input: #0a0a10;
 
   /* Fonts */
-  --font-display: "Fragment Mono", "Courier New", monospace;
-  --font-body: "Syne", sans-serif;
-  --font-mono: Sora, "Fragment Mono", "Courier New", monospace;
+  --font-display: var(--font-fragment-mono), "Courier New", monospace;
+  --font-body: var(--font-sora), sans-serif;
+  --font-mono: var(--font-fragment-mono), "Courier New", monospace;
 
   /* Animations — v4 auto-generates animate-* utilities from these */
   --animate-fade-in-up: fade-in-up 0.8s ease forwards;
