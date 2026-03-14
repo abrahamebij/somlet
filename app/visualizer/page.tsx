@@ -7,6 +7,8 @@ import { useSomletStore } from "@/store/useSomletStore";
 import { useWorldStore } from "@/store/useWorldStore";
 import { SomletSidebar } from "@/components/visualizer/SomletSidebar";
 import { toast } from "sonner";
+import { FaVolumeHigh } from "react-icons/fa6";
+import { FaVolumeMute } from "react-icons/fa";
 
 const SomletGame = dynamic(() => import("@/components/visualizer/SomletGame"), {
   ssr: false,
@@ -16,7 +18,7 @@ const SomletGame = dynamic(() => import("@/components/visualizer/SomletGame"), {
 
 function SoundButton() {
   const audioUnlocked = useWorldStore((s) => s.audioUnlocked);
-  const unlockAudio   = useWorldStore((s) => s.unlockAudio);
+  const unlockAudio = useWorldStore((s) => s.unlockAudio);
 
   return (
     <button
@@ -25,14 +27,15 @@ function SoundButton() {
       className={`
         flex items-center gap-1.5 px-3 py-1.5 border text-[11px] font-mono
         tracking-[0.15em] uppercase transition-all duration-200 cursor-crosshair
-        ${audioUnlocked
-          ? "border-accent text-accent"
-          : "border-border text-foreground-faint hover:border-accent hover:text-accent animate-blink"
+        ${
+          audioUnlocked
+            ? "border-accent text-accent"
+            : "border-border text-foreground-faint hover:border-accent hover:text-accent animate-blink"
         }
       `}
     >
       <span className="text-sm leading-none">
-        {audioUnlocked ? "🔊" : "🔇"}
+        {audioUnlocked ? <FaVolumeHigh /> : <FaVolumeMute />}
       </span>
       <span>{audioUnlocked ? "SOUND ON" : "SOUND OFF"}</span>
     </button>
