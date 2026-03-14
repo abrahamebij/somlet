@@ -7,21 +7,26 @@ import { useSomletStore } from "@/store/useSomletStore";
 import { SomletSidebar } from "@/components/visualizer/SomletSidebar";
 import { toast } from "sonner";
 
-// Phaser must be client-side only
 const SomletGame = dynamic(() => import("@/components/visualizer/SomletGame"), {
   ssr: false,
 });
 
 const Visualizer = () => {
   const addEvent = useSomletStore((s) => s.addEvent);
+  const gameReady = useSomletStore((s) => s.gameReady);
 
   useEffect(() => {
+    // Don't subscribe until Phaser has finished building the world
+    if (!gameReady) return;
+
+    let cancelled = false;
+
     const setupSubscription = async () => {
       try {
         await sdk.subscribe({
           ethCalls: [],
           onData: (data) => {
-            addEvent(data);
+            if (!cancelled) addEvent(data);
           },
         });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,7 +37,12 @@ const Visualizer = () => {
     };
 
     setupSubscription();
-  }, [addEvent]);
+
+    // Cancel in-flight events if the component unmounts mid-stream
+    return () => {
+      cancelled = true;
+    };
+  }, [gameReady, addEvent]);
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">

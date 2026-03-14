@@ -24,8 +24,9 @@ const WATER_APPROACH = WATER_RADIUS * 1.8;
 // ── WorldScene ────────────────────────────────────────────────────────────────
 
 export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
-  private sprites       = new Map<string, PhaserType.GameObjects.Sprite>();
+  private sprites = new Map<string, PhaserType.GameObjects.Sprite>();
   private pendingRemoval = new Set<string>();
+  private selectionGlow!: PhaserType.GameObjects.Graphics; // indicator under selected chick
 
   constructor() { super({ key: "WorldScene" }); }
 
@@ -56,6 +57,12 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
     this.cameras.main.setBackgroundColor("#0a1a0a");
+
+    // Selection indicator — drawn above ground, below chicks
+    this.selectionGlow = this.add.graphics().setDepth(1);
+
+    // Signal to Visualizer that the game is ready to receive events
+    useSomletStore.getState().setGameReady(true);
   }
 
   // ── Update ───────────────────────────────────────────────────────────────────
@@ -66,6 +73,22 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     store.chicks.forEach((chick) => {
       if (!this.sprites.has(chick.id)) this.spawnSprite(chick);
     });
+
+    // ── Selection glow — follows selected chick ───────────────────────────
+    this.selectionGlow.clear();
+    const selectedId = store.selectedChickId;
+    if (selectedId) {
+      const selectedSprite = this.sprites.get(selectedId);
+      if (selectedSprite && selectedSprite.active) {
+        const r = CHICK_DISPLAY * 0.55;
+        // Outer soft ring
+        this.selectionGlow.lineStyle(3, 0xc8f03a, 0.6);
+        this.selectionGlow.strokeCircle(selectedSprite.x, selectedSprite.y, r);
+        // Inner fill pulse — static alpha, animation handled by tween below
+        this.selectionGlow.fillStyle(0xc8f03a, 0.12);
+        this.selectionGlow.fillCircle(selectedSprite.x, selectedSprite.y, r);
+      }
+    }
 
     // Tick each sprite
     this.sprites.forEach((sprite, id) => {
@@ -88,7 +111,8 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
       .setDisplaySize(CHICK_DISPLAY, CHICK_DISPLAY)
       .setOrigin(0.5, 0.5)
       .setCollideWorldBounds(true)
-      .setBounce(0.4); // #9 softer bounce — feels organic not robotic
+      .setBounce(0.4)
+      .setDepth(2); // above selectionGlow (depth 1)
 
     sprite.setInteractive();
 
@@ -259,7 +283,7 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     Object.entries(CHICK_ANIMS).forEach(([key, cfg]) => {
       anims.create({
         key:       `chick-${key}`,
-        frames:    anims.generateFrameNumbers("chick", { frames: cfg.frames as unknown as number[] }),
+        frames: anims.generateFrameNumbers("chick", { frames: cfg.frames as unknown as number[] }),
         frameRate: cfg.frameRate,
         repeat:    cfg.repeat,
       });

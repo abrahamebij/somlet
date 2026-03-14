@@ -25,13 +25,15 @@ export interface Somlet {
 }
 
 interface SomletStore {
-  events: SomniaEvent[];       // all raw events, capped at 500
-  somlets: Somlet[];           // one per 40 events
+  events: SomniaEvent[];
+  somlets: Somlet[];
   selectedSomlet: Somlet | null;
-  eventBuffer: number;         // how many events since last spawn
+  eventBuffer: number;
+  gameReady: boolean;           // true once Phaser WorldScene.create() finishes
 
   addEvent: (event: SomniaEvent) => void;
   selectSomlet: (id: string | null) => void;
+  setGameReady: (ready: boolean) => void;
   clearAll: () => void;
 }
 
@@ -42,6 +44,7 @@ export const useSomletStore = create<SomletStore>((set, get) => ({
   somlets: [],
   selectedSomlet: null,
   eventBuffer: 0,
+  gameReady: false,
 
   addEvent: (event) => {
     const { eventBuffer } = get();
@@ -71,5 +74,7 @@ export const useSomletStore = create<SomletStore>((set, get) => ({
     set({ selectedSomlet: somlet });
   },
 
-  clearAll: () => set({ events: [], somlets: [], selectedSomlet: null, eventBuffer: 0 }),
+  setGameReady: (ready) => set({ gameReady: ready }),
+
+  clearAll: () => set({ events: [], somlets: [], selectedSomlet: null, eventBuffer: 0, gameReady: false }),
 }));
