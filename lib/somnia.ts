@@ -18,11 +18,11 @@ export const somniaTestnet = defineChain({
   rpcUrls: {
     default: {
       http: ['https://dream-rpc.somnia.network'],
-      webSocket: ['ws://api.infra.testnet.somnia.network/ws'],
+      webSocket: ['wss://api.infra.testnet.somnia.network/ws'],
     },
     public: {
       http: ['https://dream-rpc.somnia.network'],
-      webSocket: ['ws://api.infra.testnet.somnia.network/ws'],
+      webSocket: ['wss://api.infra.testnet.somnia.network/ws'],
     },
   },
 });
