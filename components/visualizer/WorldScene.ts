@@ -8,6 +8,8 @@ import {
   CHICK_FRAME_W, CHICK_FRAME_H, CHICK_DISPLAY, CHICK_ANIMS,
   FENCE_TILES, FE,
   WATER_CENTER_X, WATER_CENTER_Y, WATER_RADIUS,
+  CHORUS_INTERVAL, CHORUS_FRACTION, CHORUS_WALK_SPEED,
+  MORSE_DOT, MORSE_DASH, MORSE_GAP, MORSE_WORD_GAP,
   buildGroundLayer, buildDecorations,
 } from "@/config/worldConfig";
 import { useWorldStore, type Chick } from "@/store/useWorldStore";
@@ -21,20 +23,224 @@ const WALK_DURATION  = () => 1000 + Math.random() * 2000;
 const DRINK_DURATION = 3000;
 const WATER_APPROACH = WATER_RADIUS * 1.8;
 
+// ── ChorusOrchestrator ────────────────────────────────────────────────────────
+// Manages the 60s gathering cycle entirely outside the per-frame update loop.
+
+type SpriteMap = Map<string, PhaserType.GameObjects.Sprite>;
+
+class ChorusOrchestrator {
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private active = false;
+  private scene: any; // Phaser scene ref
+
+  constructor(scene: any) {
+    this.scene = scene;
+  }
+
+  start() {
+    this.scheduleNext();
+  }
+
+  stop() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  private scheduleNext() {
+    this.timer = setTimeout(() => this.runGathering(), CHORUS_INTERVAL);
+  }
+
+  private async runGathering() {
+    if (this.active) { this.scheduleNext(); return; }
+    this.active = true;
+
+    const store = useWorldStore.getState();
+    const sprites = this.scene.sprites as SpriteMap;
+
+    // Pick ~1/3 of alive, non-dying chicks
+    const eligible = [...store.chicks.values()].filter(
+      (c) => c.state !== "death" && sprites.has(c.id),
+    );
+    const count = Math.max(1, Math.floor(eligible.length * CHORUS_FRACTION));
+    const chosen = eligible.sort(() => Math.random() - 0.5).slice(0, count);
+    if (chosen.length === 0) { this.active = false; this.scheduleNext(); return; }
+
+    // Random gather point — away from water and fence edges
+    const gx = FENCE_INSET * 2 + Math.random() * (WORLD_W - FENCE_INSET * 4);
+    const gy = FENCE_INSET * 2 + Math.random() * (WORLD_H - FENCE_INSET * 4);
+
+    // ── Phase 1: walk to gather point ──────────────────────────────────────
+    chosen.forEach((chick) => {
+      store.updateChick(chick.id, { state: "gather", isGathering: true, vx: 0, vy: 0 });
+      const sprite = sprites.get(chick.id)!;
+      const body = (sprite as any).body as PhaserType.Physics.Arcade.Body;
+      const angle = Math.atan2(gy - sprite.y, gx - sprite.x);
+      const vx = Math.cos(angle) * CHORUS_WALK_SPEED;
+      const vy = Math.sin(angle) * CHORUS_WALK_SPEED;
+      body?.setVelocity(vx, vy);
+      sprite.play("chick-walk", true);
+      sprite.setFlipX(vx < 0);
+    });
+
+    // Wait until they're close enough OR timeout after 6s
+    await this.waitUntilArrived(chosen, gx, gy, sprites, 6000);
+
+    // ── Phase 2: stop, face screen, pause ──────────────────────────────────
+    chosen.forEach((chick) => {
+      const sprite = sprites.get(chick.id);
+      if (!sprite) return;
+      const body = (sprite as any).body as PhaserType.Physics.Arcade.Body;
+      body?.setVelocity(0, 0);
+      sprite.setFlipX(false);
+      sprite.play("chick-idle", true);
+    });
+
+    await this.wait(400); // brief pause before clucking
+
+    // ── Phase 3: morse cluck sequence ──────────────────────────────────────
+    // Generate a random morse pattern: 2–4 "words" of 2–4 symbols each
+    const pattern = this.generateMorse();
+    await this.playMorse(pattern, chosen, sprites);
+
+    // ── Phase 4: scatter back to wandering ─────────────────────────────────
+    chosen.forEach((chick) => {
+      const sprite = sprites.get(chick.id);
+      if (!sprite) return;
+      const angle = Math.random() * Math.PI * 2;
+      const vx = Math.cos(angle) * WALK_SPEED;
+      const vy = Math.sin(angle) * WALK_SPEED;
+      const body = (sprite as any).body as PhaserType.Physics.Arcade.Body;
+      body?.setVelocity(vx, vy);
+      sprite.play("chick-walk", true);
+      sprite.setFlipX(vx < 0);
+      store.updateChick(chick.id, {
+        state: "walk",
+        stateTimer: WALK_DURATION(),
+        isGathering: false,
+        vx, vy,
+        facingLeft: vx < 0,
+      });
+    });
+
+    this.active = false;
+    this.scheduleNext();
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private wait(ms: number): Promise<void> {
+    return new Promise((res) => setTimeout(res, ms));
+  }
+
+  private waitUntilArrived(
+    chicks: Chick[],
+    gx: number,
+    gy: number,
+    sprites: SpriteMap,
+    timeout: number,
+  ): Promise<void> {
+    return new Promise((res) => {
+      const ARRIVE_DIST = S * 3;
+      const start = Date.now();
+      const check = () => {
+        if (Date.now() - start > timeout) { res(); return; }
+        const allClose = chicks.every((c) => {
+          const sp = sprites.get(c.id);
+          if (!sp) return true;
+          return Math.hypot(sp.x - gx, sp.y - gy) < ARRIVE_DIST;
+        });
+        if (allClose) res();
+        else setTimeout(check, 80);
+      };
+      check();
+    });
+  }
+
+  private generateMorse(): ("dot" | "dash")[][] {
+    // 2–4 words, each with 2–4 symbols
+    const wordCount = 2 + Math.floor(Math.random() * 3);
+    return Array.from({ length: wordCount }, () => {
+      const symCount = 2 + Math.floor(Math.random() * 3);
+      return Array.from({ length: symCount }, () =>
+        Math.random() < 0.5 ? "dot" : "dash",
+      );
+    });
+  }
+
+  private async playMorse(
+    pattern: ("dot" | "dash")[][],
+    chicks: Chick[],
+    sprites: SpriteMap,
+  ) {
+    for (const word of pattern) {
+      for (const sym of word) {
+        const duration = sym === "dot" ? MORSE_DOT : MORSE_DASH;
+
+        // Visual pulse — scale up slightly + tint warm white
+        chicks.forEach((chick) => {
+          const sprite = sprites.get(chick.id);
+          if (!sprite) return;
+          const d = CHICK_DISPLAY;
+          this.scene.tweens.add({
+            targets: sprite,
+            displayWidth: d * 1.35,
+            displayHeight: d * 1.35,
+            duration: 80,
+            yoyo: true,
+            onStart: () => sprite.setTint(0xfffbe6),
+            onComplete: () => sprite.clearTint(),
+          });
+        });
+
+        // Audio — base + two pitch-shifted echoes for reverb effect
+        // sound.add() creates a fresh instance each call so sounds overlap freely
+        const base = sym === "dot" ? "cluck-dot" : "cluck-dash";
+        const hi = sym === "dot" ? "cluck-dot-hi" : "cluck-dash-hi";
+        const lo = sym === "dot" ? "cluck-dot-lo" : "cluck-dash-lo";
+
+        const playOnce = (key: string, volume: number) => {
+          const snd = this.scene.sound.add(key, { volume });
+          snd.once("complete", () => snd.destroy());
+          snd.play();
+        };
+
+        playOnce(base, 0.9);
+        setTimeout(() => playOnce(hi, 0.45), 80);
+        setTimeout(() => playOnce(lo, 0.28), 160);
+
+        await this.wait(duration + MORSE_GAP);
+      }
+      await this.wait(MORSE_WORD_GAP);
+    }
+  }
+}
+
 // ── WorldScene ────────────────────────────────────────────────────────────────
 
 export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
   private sprites = new Map<string, PhaserType.GameObjects.Sprite>();
   private pendingRemoval = new Set<string>();
-  private selectionGlow!: PhaserType.GameObjects.Graphics; // indicator under selected chick
+  private selectionGlow!: PhaserType.GameObjects.Graphics;
+  private chorus!: ChorusOrchestrator;
 
   constructor() { super({ key: "WorldScene" }); }
+
+  shutdown(this: PhaserType.Scene & WorldScene) {
+    this.chorus?.stop();
+  }
 
   // ── Preload ──────────────────────────────────────────────────────────────────
   preload(this: PhaserType.Scene & WorldScene) {
     this.load.spritesheet("tiles",  "/assets/Set_1_2.png",                  { frameWidth: TILE,          frameHeight: TILE          });
     this.load.spritesheet("fences", "/assets/fences_and_ladders_etc.png",   { frameWidth: TILE,          frameHeight: TILE          });
     this.load.spritesheet("chick",  "/assets/chick_spritesheet_clean.png",  { frameWidth: CHICK_FRAME_W, frameHeight: CHICK_FRAME_H });
+    this.load.spritesheet("fire", "/assets/fire_spritesheet.png", { frameWidth: 48, frameHeight: 48 });
+    this.load.audio("cluck-dot", "/assets/cluck-dot.mp3");
+    this.load.audio("cluck-dash", "/assets/cluck-dash.mp3");
+    this.load.audio("cluck-dot-hi", "/assets/cluck-dot-hi.mp3");
+    this.load.audio("cluck-dot-lo", "/assets/cluck-dot-lo.mp3");
+    this.load.audio("cluck-dash-hi", "/assets/cluck-dash-hi.mp3");
+    this.load.audio("cluck-dash-lo", "/assets/cluck-dash-lo.mp3");
   }
 
   // ── Create ───────────────────────────────────────────────────────────────────
@@ -61,6 +267,13 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     // Selection indicator — drawn above ground, below chicks
     this.selectionGlow = this.add.graphics().setDepth(1);
 
+    // Start the gathering chorus cycle
+    this.chorus = new ChorusOrchestrator(this);
+    this.chorus.start();
+
+    // Continuous ambient cluck loop — starts only after user unlocks audio
+    this.startAmbientClucks();
+
     // Signal to Visualizer that the game is ready to receive events
     useSomletStore.getState().setGameReady(true);
   }
@@ -74,10 +287,11 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
       if (!this.sprites.has(chick.id)) this.spawnSprite(chick);
     });
 
-    // ── Selection glow — follows selected chick ───────────────────────────
+    // ── Selection glow — hidden during fire mode ──────────────────────────
     this.selectionGlow.clear();
+    const fireModeActive = store.fireModeActive;
     const selectedId = store.selectedChickId;
-    if (selectedId) {
+    if (selectedId && !fireModeActive) {
       const selectedSprite = this.sprites.get(selectedId);
       if (selectedSprite && selectedSprite.active) {
         const r = CHICK_DISPLAY * 0.55;
@@ -122,12 +336,15 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     });
 
     sprite.on("pointerover", () => {
+      if (useWorldStore.getState().fireModeActive) return; // fire mode — no highlight
       sprite.setTint(0xff2222);
       (this as any).input.setDefaultCursor("pointer");
     });
     sprite.on("pointerout", () => {
       sprite.clearTint();
-      (this as any).input.setDefaultCursor("default");
+      if (!useWorldStore.getState().fireModeActive) {
+        (this as any).input.setDefaultCursor("default");
+      }
     });
 
     sprite.play("chick-idle");
@@ -164,6 +381,15 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
         });
       }
       return; // nothing else runs while dying
+    }
+
+    // ── Gathering guard — chorus orchestrator owns these chicks ─────────────
+    if (chick.state === "gather") {
+      // Still tick lifespan so they can die naturally mid-gathering
+      const newLifespan = chick.lifespanTimer - delta;
+      if (newLifespan <= 0) { store.killChick(chick.id); return; }
+      store.updateChick(chick.id, { lifespanTimer: newLifespan });
+      return;
     }
 
     // ── #7 Lifespan — checked AFTER death guard ──────────────────────────────
@@ -257,16 +483,84 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     }
   }
 
+  private startAmbientClucks(this: PhaserType.Scene & WorldScene) {
+    const playOnce = (key: string, volume: number) => {
+      const snd = (this.sound as any).add(key, { volume });
+      snd.once("complete", () => snd.destroy());
+      snd.play();
+    };
+
+    const scheduleNext = () => {
+      // Only cluck if audio is unlocked and there are alive chicks
+      const { audioUnlocked, chicks } = useWorldStore.getState();
+      if (!audioUnlocked) {
+        // Poll until unlocked
+        setTimeout(scheduleNext, 300);
+        return;
+      }
+
+      // Resume Phaser's Web Audio context (in case browser suspended it)
+      const soundManager = this.sound as any;
+      if (soundManager.context?.state === "suspended") {
+        soundManager.context.resume();
+      }
+
+      if (chicks.size > 0) {
+        const variants = ["cluck-dot", "cluck-dot-hi", "cluck-dot-lo", "cluck-dash", "cluck-dash-hi", "cluck-dash-lo"];
+        const key = variants[Math.floor(Math.random() * variants.length)];
+        const volume = 0.2 + Math.random() * 0.4;
+        playOnce(key, volume);
+
+        if (Math.random() < 0.4) {
+          const key2 = variants[Math.floor(Math.random() * variants.length)];
+          setTimeout(() => playOnce(key2, 0.15 + Math.random() * 0.2), 60 + Math.random() * 100);
+        }
+      }
+
+      const nextDelay = 300 + Math.random() * 600;
+      setTimeout(scheduleNext, nextDelay);
+    };
+
+    setTimeout(scheduleNext, 800);
+  }
+
   // ── Fire click ───────────────────────────────────────────────────────────────
   private handleFireClick(this: PhaserType.Scene & WorldScene, wx: number, wy: number) {
-    const FIRE_RADIUS = S * 2;
-    const g = this.add.graphics();
-    g.fillStyle(0xff4400, 0.7);
-    g.fillCircle(wx, wy, FIRE_RADIUS);
-    (this as any).tweens.add({
-      targets: g, alpha: 0, duration: 600,
-      onComplete: () => g.destroy(),
-    });
+    const FIRE_RADIUS = S * 2.5;
+    const FIRE_DURATION = 2200;
+    const FIRE_COUNT = 7;
+
+    for (let i = 0; i < FIRE_COUNT; i++) {
+      const angle = (i / FIRE_COUNT) * Math.PI * 2 + Math.random() * 0.4;
+      const dist = Math.random() * S * 0.9;          // tighter cluster
+      const fx = wx + Math.cos(angle) * dist;
+      const fy = wy + Math.sin(angle) * dist;
+      const size = (10 + Math.random() * 8) * (S / 32); // tiny: ~10–18px
+      const delay = i * 60;
+
+      const flame = this.add.sprite(fx, fy, "fire", 0)
+        .setDisplaySize(size, size * 1.3)  // slightly taller than wide
+        .setOrigin(0.5, 1)
+        .setDepth(5)
+        .setAlpha(0);
+
+      (this as any).tweens.add({
+        targets: flame,
+        alpha: { from: 0, to: 0.88 },
+        duration: 120,
+        delay,
+        onStart: () => flame.play("fire-burn"),
+        onComplete: () => {
+          (this as any).tweens.add({
+            targets: flame,
+            alpha: 0,
+            duration: 400,
+            delay: FIRE_DURATION,
+            onComplete: () => flame.destroy(),
+          });
+        },
+      });
+    }
 
     const store = useWorldStore.getState();
     this.sprites.forEach((sprite, id) => {
@@ -280,6 +574,8 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
   private createAnimations(this: PhaserType.Scene & WorldScene) {
     const anims = (this as any).anims as PhaserType.Animations.AnimationManager;
     if (anims.exists("chick-idle")) return;
+
+    // Chick animations
     Object.entries(CHICK_ANIMS).forEach(([key, cfg]) => {
       anims.create({
         key:       `chick-${key}`,
@@ -287,6 +583,14 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
         frameRate: cfg.frameRate,
         repeat:    cfg.repeat,
       });
+    });
+
+    // Fire animation — 8 frames, loops
+    anims.create({
+      key: "fire-burn",
+      frames: anims.generateFrameNumbers("fire", { start: 0, end: 7 }),
+      frameRate: 14,
+      repeat: -1,
     });
   }
 

@@ -7,7 +7,7 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type ChickState = "idle" | "walk" | "drink" | "death";
+export type ChickState = "idle" | "walk" | "drink" | "death" | "gather";
 
 export interface Chick {
   id: string;
@@ -34,13 +34,15 @@ interface WorldStore {
   chicks: Map<string, Chick>;
   selectedChickId: string | null;
   fireModeActive: boolean;
+  audioUnlocked: boolean;
 
-  spawnChick:   (event: SomniaEvent, id?: string) => void;
-  killChick:    (id: string) => void;
-  selectChick:  (id: string | null) => void;
+  spawnChick: (event: SomniaEvent, id?: string) => void;
+  killChick: (id: string) => void;
+  selectChick: (id: string | null) => void;
   toggleFireMode: () => void;
-  updateChick:  (id: string, patch: Partial<Chick>) => void;
-  clearAll:     () => void;
+  updateChick: (id: string, patch: Partial<Chick>) => void;
+  unlockAudio: () => void;
+  clearAll: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -59,6 +61,7 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   chicks: new Map(),
   selectedChickId: null,
   fireModeActive: false,
+  audioUnlocked: false,
 
   spawnChick: (event, id) => {
     const { x, y } = randomSpawn();
@@ -100,6 +103,8 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   selectChick: (id) => set({ selectedChickId: id }),
 
   toggleFireMode: () => set((s) => ({ fireModeActive: !s.fireModeActive })),
+
+  unlockAudio: () => set({ audioUnlocked: true }),
 
   updateChick: (id, patch) => set((s) => {
     const chick = s.chicks.get(id);

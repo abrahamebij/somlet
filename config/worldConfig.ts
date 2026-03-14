@@ -38,6 +38,15 @@ export const CHICK_FRAME_W  = 96;
 export const CHICK_FRAME_H  = 96;
 export const CHICK_DISPLAY  = S * 1.6; // render size in world (≈51px)
 
+// Chorus / gathering
+export const CHORUS_INTERVAL = 10_000; // ms between gatherings
+export const CHORUS_FRACTION = 0.33;   // fraction of chicks that gather
+export const CHORUS_WALK_SPEED = 55;    // px/s toward gather point
+export const MORSE_DOT = 220;   // ms — short cluck
+export const MORSE_DASH = 540;   // ms — long cluck
+export const MORSE_GAP = 160;   // ms — gap between pulses
+export const MORSE_WORD_GAP = 500;   // ms — gap between morse "words"
+
 // Frame indices within chick_spritesheet_clean.png (5 cols × 4 rows)
 export const CHICK_ANIMS = {
   idle:  { frames: [0, 1],          frameRate: 2,  repeat: -1 },
