@@ -12,16 +12,24 @@ export const H_MID = Math.floor(MAP_ROWS / 2); // 15
 export const V_MID = Math.floor(MAP_COLS / 2); // 20
 export const BLEND = 1;
 
-// ── Water pond (dead center) ──────────────────────────────────────────────────
-export const WP_C1 = V_MID - 2; // col 18
-export const WP_C2 = V_MID + 1; // col 21
-export const WP_R1 = H_MID - 1; // row 14
-export const WP_R2 = H_MID + 1; // row 16
+// ── Water pond 1 (bottom-right quadrant) ─────────────────────────────────────
+export const WP_C1 = MAP_COLS - 10; // col 30
+export const WP_C2 = MAP_COLS - 7;  // col 33
+export const WP_R1 = MAP_ROWS - 8;  // row 22
+export const WP_R2 = MAP_ROWS - 6;  // row 24
 
-// Water center point + radius (for chicken AI)
+// ── Water pond 2 (bottom-left quadrant) ──────────────────────────────────────
+export const WP2_C1 = 5;            // col 5
+export const WP2_C2 = 8;            // col 8
+export const WP2_R1 = MAP_ROWS - 8; // row 22
+export const WP2_R2 = MAP_ROWS - 6; // row 24
+
+// Water center points + radius (for chicken AI — chicks attracted to nearest)
 export const WATER_CENTER_X = WP_C1 * S + (WP_C2 - WP_C1 + 1) * S / 2;
 export const WATER_CENTER_Y = WP_R1 * S + (WP_R2 - WP_R1 + 1) * S / 2;
-export const WATER_RADIUS   = S * 2;
+export const WATER2_CENTER_X = WP2_C1 * S + (WP2_C2 - WP2_C1 + 1) * S / 2;
+export const WATER2_CENTER_Y = WP2_R1 * S + (WP2_R2 - WP2_R1 + 1) * S / 2;
+export const WATER_RADIUS = S * 2;
 
 // ── Fence offset ──────────────────────────────────────────────────────────────
 export const FE           = 2;
@@ -39,7 +47,7 @@ export const CHICK_FRAME_H  = 96;
 export const CHICK_DISPLAY  = S * 1.6; // render size in world (≈51px)
 
 // Chorus / gathering
-export const CHORUS_INTERVAL = 10_000; // ms between gatherings
+export const CHORUS_INTERVAL = 60_000; // ms between gatherings
 export const CHORUS_FRACTION = 0.33;   // fraction of chicks that gather
 export const CHORUS_WALK_SPEED = 55;    // px/s toward gather point
 export const MORSE_DOT = 220;   // ms — short cluck
@@ -106,6 +114,7 @@ export function buildGroundLayer(): number[][] {
   return Array.from({ length: MAP_ROWS }, (_, row) =>
     Array.from({ length: MAP_COLS }, (_, col) => {
       if (row >= WP_R1 && row <= WP_R2 && col >= WP_C1 && col <= WP_C2) return -1;
+      if (row >= WP2_R1 && row <= WP2_R2 && col >= WP2_C1 && col <= WP2_C2) return -1;
       return zoneGrass(col, row);
     })
   );
@@ -124,6 +133,7 @@ export function buildDecorations(): [number, number, number][] {
   for (let row = FE + 2; row < MAP_ROWS - FE - 2; row++) {
     for (let col = FE + 2; col < MAP_COLS - FE - 2; col++) {
       if (row >= WP_R1 - 1 && row <= WP_R2 + 1 && col >= WP_C1 - 1 && col <= WP_C2 + 1) continue;
+      if (row >= WP2_R1 - 1 && row <= WP2_R2 + 1 && col >= WP2_C1 - 1 && col <= WP2_C2 + 1) continue;
       if (Math.abs(row - H_MID) <= BLEND || Math.abs(col - V_MID) <= BLEND) continue;
       if (rand(col, row) < 0.08) {
         decs.push([col, row, DEC_TILES[Math.floor(rand(col + 1, row + 1) * DEC_TILES.length)]]);

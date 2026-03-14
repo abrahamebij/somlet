@@ -3,6 +3,7 @@ import type { SomniaEvent } from "@/store/useSomletStore";
 import {
   PLAY_X, PLAY_Y, PLAY_W, PLAY_H,
   WATER_CENTER_X, WATER_CENTER_Y, WATER_RADIUS,
+  WORLD_W, WORLD_H, S,
 } from "@/config/worldConfig";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -30,13 +31,21 @@ export interface Chick {
   isGathering: boolean;
 }
 
+export interface PendingSpawn {
+  id: string;
+  event: SomniaEvent;
+}
+
 interface WorldStore {
   chicks: Map<string, Chick>;
   selectedChickId: string | null;
   fireModeActive: boolean;
   audioUnlocked: boolean;
+  pendingSpawns: PendingSpawn[];
 
-  spawnChick: (event: SomniaEvent, id?: string) => void;
+  spawnChick: (event: SomniaEvent, id?: string, parentX?: number, parentY?: number) => void;
+  queueSpawn: (event: SomniaEvent, id: string) => void;
+  drainSpawn: () => PendingSpawn | null;
   killChick: (id: string) => void;
   selectChick: (id: string | null) => void;
   toggleFireMode: () => void;
@@ -62,27 +71,29 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   selectedChickId: null,
   fireModeActive: false,
   audioUnlocked: false,
+  pendingSpawns: [],
 
-  spawnChick: (event, id) => {
-    const { x, y } = randomSpawn();
-    const chickId  = id ?? `chick-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-
-    // Don't double-spawn if id already exists (hot reload safety)
+  spawnChick: (event, id, parentX, parentY) => {
+    const chickId = id ?? `chick-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     if (get().chicks.has(chickId)) return;
+
+    // If parent position given use it (offset slightly), else center of world
+    const x = parentX !== undefined ? parentX + (Math.random() - 0.5) * S * 2 : WORLD_W / 2;
+    const y = parentY !== undefined ? parentY + (Math.random() - 0.5) * S * 2 : WORLD_H / 2;
 
     const chick: Chick = {
       id: chickId,
       event,
-      spawnedAt:    Date.now(),
-      spawnX:       x,
-      spawnY:       y,
-      state:        "idle",
-      stateTimer:   1000 + Math.random() * 1500,
+      spawnedAt: Date.now(),
+      spawnX: x,
+      spawnY: y,
+      state: "idle",
+      stateTimer: 1000 + Math.random() * 1500,
       lifespanTimer: 30_000,
-      vx:           0,
-      vy:           0,
-      facingLeft:   Math.random() < 0.5,
-      isGathering:  false,
+      vx: 0,
+      vy: 0,
+      facingLeft: Math.random() < 0.5,
+      isGathering: false,
     };
 
     set((s) => {
@@ -90,6 +101,18 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
       next.set(chickId, chick);
       return { chicks: next };
     });
+  },
+
+  queueSpawn: (event, id) => set((s) => ({
+    pendingSpawns: [...s.pendingSpawns, { id, event }],
+  })),
+
+  drainSpawn: () => {
+    const { pendingSpawns } = get();
+    if (pendingSpawns.length === 0) return null;
+    const [next, ...rest] = pendingSpawns;
+    set({ pendingSpawns: rest });
+    return next;
   },
 
   killChick: (id) => set((s) => {
@@ -114,5 +137,5 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     return { chicks: next };
   }),
 
-  clearAll: () => set({ chicks: new Map(), selectedChickId: null }),
+  clearAll: () => set({ chicks: new Map(), selectedChickId: null, pendingSpawns: [] }),
 }));

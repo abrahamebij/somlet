@@ -3,6 +3,7 @@ import { create } from "zustand";
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const EVENTS_PER_CHICK = 40;
+const FIRST_SPAWN_DELAY = 4000; // ms — gives egg hatch animation time to play
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,7 @@ export interface SomniaEvent {
 
 export interface Somlet {
   id: string;
-  event: SomniaEvent;   // the 40th event that triggered this chick's spawn
+  event: SomniaEvent;
   spawnedAt: number;
 }
 
@@ -29,7 +30,8 @@ interface SomletStore {
   somlets: Somlet[];
   selectedSomlet: Somlet | null;
   eventBuffer: number;
-  gameReady: boolean;           // true once Phaser WorldScene.create() finishes
+  gameReady: boolean;
+  gameReadyAt: number | null;   // timestamp when game became ready
 
   addEvent: (event: SomniaEvent) => void;
   selectSomlet: (id: string | null) => void;
@@ -45,13 +47,17 @@ export const useSomletStore = create<SomletStore>((set, get) => ({
   selectedSomlet: null,
   eventBuffer: 0,
   gameReady: false,
+  gameReadyAt: null,
 
   addEvent: (event) => {
-    const { eventBuffer } = get();
-    const nextBuffer = eventBuffer + 1;
+    const { eventBuffer, gameReadyAt } = get();
 
-    // Every 40th event spawns a chick representing that event
-    const shouldSpawn = nextBuffer >= EVENTS_PER_CHICK;
+    // Hold back first spawn until FIRST_SPAWN_DELAY ms after game became ready
+    const elapsed = gameReadyAt ? Date.now() - gameReadyAt : 0;
+    const firstSpawnUnlocked = elapsed >= FIRST_SPAWN_DELAY;
+
+    const nextBuffer = eventBuffer + 1;
+    const shouldSpawn = firstSpawnUnlocked && nextBuffer >= EVENTS_PER_CHICK;
 
     const newSomlet: Somlet | null = shouldSpawn
       ? {
@@ -64,6 +70,7 @@ export const useSomletStore = create<SomletStore>((set, get) => ({
     set((state) => ({
       events: [event, ...state.events].slice(0, 500),
       somlets: newSomlet ? [...state.somlets, newSomlet] : state.somlets,
+      // Only reset buffer when a spawn actually happens, otherwise keep counting
       eventBuffer: shouldSpawn ? 0 : nextBuffer,
     }));
   },
@@ -74,7 +81,13 @@ export const useSomletStore = create<SomletStore>((set, get) => ({
     set({ selectedSomlet: somlet });
   },
 
-  setGameReady: (ready) => set({ gameReady: ready }),
+  setGameReady: (ready) => set({
+    gameReady: ready,
+    gameReadyAt: ready ? Date.now() : null,
+  }),
 
-  clearAll: () => set({ events: [], somlets: [], selectedSomlet: null, eventBuffer: 0, gameReady: false }),
+  clearAll: () => set({
+    events: [], somlets: [], selectedSomlet: null,
+    eventBuffer: 0, gameReady: false, gameReadyAt: null,
+  }),
 }));

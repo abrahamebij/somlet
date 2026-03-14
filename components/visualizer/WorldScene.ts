@@ -8,6 +8,8 @@ import {
   CHICK_FRAME_W, CHICK_FRAME_H, CHICK_DISPLAY, CHICK_ANIMS,
   FENCE_TILES, FE,
   WATER_CENTER_X, WATER_CENTER_Y, WATER_RADIUS,
+  WATER2_CENTER_X, WATER2_CENTER_Y,
+  WP2_C1, WP2_C2, WP2_R1, WP2_R2,
   CHORUS_INTERVAL, CHORUS_FRACTION, CHORUS_WALK_SPEED,
   MORSE_DOT, MORSE_DASH, MORSE_GAP, MORSE_WORD_GAP,
   buildGroundLayer, buildDecorations,
@@ -222,6 +224,7 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
   private pendingRemoval = new Set<string>();
   private selectionGlow!: PhaserType.GameObjects.Graphics;
   private chorus!: ChorusOrchestrator;
+  private firstChickHatched = false;
 
   constructor() { super({ key: "WorldScene" }); }
 
@@ -235,6 +238,7 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     this.load.spritesheet("fences", "/assets/fences_and_ladders_etc.png",   { frameWidth: TILE,          frameHeight: TILE          });
     this.load.spritesheet("chick",  "/assets/chick_spritesheet_clean.png",  { frameWidth: CHICK_FRAME_W, frameHeight: CHICK_FRAME_H });
     this.load.spritesheet("fire", "/assets/fire_spritesheet.png", { frameWidth: 48, frameHeight: 48 });
+    this.load.spritesheet("egg", "/assets/egg_hatch.png", { frameWidth: 48, frameHeight: 48 });
     this.load.audio("cluck-dot", "/assets/cluck-dot.mp3");
     this.load.audio("cluck-dash", "/assets/cluck-dash.mp3");
     this.load.audio("cluck-dot-hi", "/assets/cluck-dot-hi.mp3");
@@ -282,7 +286,23 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
   update(this: PhaserType.Scene & WorldScene, _time: number, delta: number) {
     const store = useWorldStore.getState();
 
-    // Spawn sprites for new chicks
+    // ── Drain one pending spawn per frame ─────────────────────────────────
+    const pending = store.drainSpawn();
+    if (pending) {
+      const aliveSprites = [...this.sprites.values()].filter((s) => s.active);
+
+      if (aliveSprites.length === 0 || !this.firstChickHatched) {
+        // No alive chicks — egg hatch at world center
+        store.spawnChick(pending.event, pending.id, WORLD_W / 2, WORLD_H / 2);
+      } else {
+        // Pick a random alive parent → replicate from it
+        const parent = aliveSprites[Math.floor(Math.random() * aliveSprites.length)];
+        store.spawnChick(pending.event, pending.id, parent.x, parent.y);
+        this.replicateChick(parent);
+      }
+    }
+
+    // Spawn sprites for new chicks that were just added to the store
     store.chicks.forEach((chick) => {
       if (!this.sprites.has(chick.id)) this.spawnSprite(chick);
     });
@@ -348,6 +368,13 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     });
 
     sprite.play("chick-idle");
+
+    // First chick ever gets the egg hatch intro
+    if (!this.firstChickHatched) {
+      this.firstChickHatched = true;
+      this.playEggHatch(sprite, chick.spawnX, chick.spawnY);
+    }
+
     this.sprites.set(chick.id, sprite);
   }
 
@@ -400,7 +427,11 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     }
 
     // ── Near water → drink ───────────────────────────────────────────────────
-    const distToWater = Math.hypot(sprite.x - WATER_CENTER_X, sprite.y - WATER_CENTER_Y);
+    const distToWater1 = Math.hypot(sprite.x - WATER_CENTER_X, sprite.y - WATER_CENTER_Y);
+    const distToWater2 = Math.hypot(sprite.x - WATER2_CENTER_X, sprite.y - WATER2_CENTER_Y);
+    const distToWater = Math.min(distToWater1, distToWater2);
+    const nearestWaterX = distToWater1 < distToWater2 ? WATER_CENTER_X : WATER2_CENTER_X;
+    const nearestWaterY = distToWater1 < distToWater2 ? WATER_CENTER_Y : WATER2_CENTER_Y;
     if (chick.state !== "drink" && distToWater < WATER_RADIUS + 8) {
       body?.setVelocity(0, 0);
       sprite.play("chick-drink", true);
@@ -421,7 +452,7 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
         const walkToWater = distToWater < WATER_APPROACH && Math.random() < 0.25;
         let vx: number, vy: number;
         if (walkToWater) {
-          const angle = Math.atan2(WATER_CENTER_Y - sprite.y, WATER_CENTER_X - sprite.x);
+          const angle = Math.atan2(nearestWaterY - sprite.y, nearestWaterX - sprite.x);
           vx = Math.cos(angle) * WALK_SPEED;
           vy = Math.sin(angle) * WALK_SPEED;
         } else {
@@ -524,6 +555,76 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
     setTimeout(scheduleNext, 800);
   }
 
+  private replicateChick(this: PhaserType.Scene & WorldScene, parent: PhaserType.GameObjects.Sprite) {
+    const origY = parent.y;
+    const origX = parent.x;
+
+    // Parent jumps up slightly then lands
+    (this as any).tweens.add({
+      targets: parent,
+      y: origY - 18,
+      duration: 130,
+      ease: "Quad.easeOut",
+      yoyo: true,
+      onComplete: () => {
+        // Flash white on landing
+        parent.setTint(0xffffff);
+        (this as any).time.delayedCall(80, () => parent.clearTint());
+      },
+    });
+
+    // Brief particle-like flash at jump point
+    const flash = this.add.graphics().setDepth(4);
+    flash.fillStyle(0xfffbe6, 0.7);
+    flash.fillCircle(origX, origY - 10, 10);
+    (this as any).tweens.add({
+      targets: flash,
+      alpha: 0,
+      scaleX: 2.5,
+      scaleY: 2.5,
+      duration: 200,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private playEggHatch(this: PhaserType.Scene & WorldScene, chickSprite: PhaserType.GameObjects.Sprite, x: number, y: number) {
+    // Hide the chick until the egg hatches
+    chickSprite.setAlpha(0);
+
+    // Egg sprite sits on top, same position
+    const egg = this.add.sprite(x, y, "egg", 0)
+      .setDisplaySize(CHICK_DISPLAY * 1.1, CHICK_DISPLAY * 1.1)
+      .setOrigin(0.5, 0.5)
+      .setDepth(3);
+
+    // Wobble tween before cracking (frames 0-1)
+    (this as any).tweens.add({
+      targets: egg,
+      x: x + 3,
+      duration: 120,
+      yoyo: true,
+      repeat: 2,
+      onComplete: () => {
+        // Play full hatch animation
+        egg.play("egg-hatch");
+        egg.once("animationcomplete-egg-hatch", () => {
+          // Fade out egg, fade in chick
+          (this as any).tweens.add({
+            targets: egg,
+            alpha: 0,
+            duration: 80,
+            onComplete: () => egg.destroy(),
+          });
+          (this as any).tweens.add({
+            targets: chickSprite,
+            alpha: 1,
+            duration: 80,
+          });
+        });
+      },
+    });
+  }
+
   // ── Fire click ───────────────────────────────────────────────────────────────
   private handleFireClick(this: PhaserType.Scene & WorldScene, wx: number, wy: number) {
     const FIRE_RADIUS = S * 2.5;
@@ -592,6 +693,14 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
       frameRate: 14,
       repeat: -1,
     });
+
+    // Egg hatch — 8 frames, plays once
+    anims.create({
+      key: "egg-hatch",
+      frames: anims.generateFrameNumbers("egg", { start: 0, end: 7 }),
+      frameRate: 6,
+      repeat: 0,
+    });
   }
 
   // ── Drawing helpers ───────────────────────────────────────────────────────────
@@ -607,24 +716,31 @@ export class WorldScene extends (globalThis.Phaser?.Scene ?? class {}) {
 
   private drawWater(this: PhaserType.Scene & WorldScene) {
     const g = this.add.graphics();
-    const w = (WP_C2 - WP_C1 + 1) * S;
-    const h = (WP_R2 - WP_R1 + 1) * S;
 
-    g.fillStyle(0x5aafd4, 1);
-    g.fillRect(WP_C1 * S, WP_R1 * S, w, h);
-    g.fillStyle(0x3d8fb5, 1);
-    g.fillRect(WP_C1 * S, WP_R1 * S, w, 3);
-    g.fillRect(WP_C1 * S, (WP_R2 + 1) * S - 3, w, 3);
-    g.fillStyle(0xffffff, 0.18);
-    for (let c = WP_C1; c <= WP_C2; c++) {
-      const x = c * S;
-      g.fillRect(x + 5,  WP_R1 * S + 8,  S - 10, 2);
-      g.fillRect(x + 10, WP_R1 * S + 16, S - 18, 2);
-      g.fillRect(x + 4,  WP_R1 * S + 26, S - 8,  2);
-    }
+    const drawPond = (c1: number, c2: number, r1: number, r2: number) => {
+      const w = (c2 - c1 + 1) * S;
+      const h = (r2 - r1 + 1) * S;
+      g.fillStyle(0x5aafd4, 1);
+      g.fillRect(c1 * S, r1 * S, w, h);
+      g.fillStyle(0x3d8fb5, 1);
+      g.fillRect(c1 * S, r1 * S, w, 3);
+      g.fillRect(c1 * S, (r2 + 1) * S - 3, w, 3);
+      g.fillStyle(0xffffff, 0.18);
+      for (let c = c1; c <= c2; c++) {
+        const x = c * S;
+        g.fillRect(x + 5, r1 * S + 8, S - 10, 2);
+        g.fillRect(x + 10, r1 * S + 16, S - 18, 2);
+        g.fillRect(x + 4, r1 * S + 26, S - 8, 2);
+      }
+    };
+
+    drawPond(WP_C1, WP_C2, WP_R1, WP_R2);   // pond 1 — bottom-right
+    drawPond(WP2_C1, WP2_C2, WP2_R1, WP2_R2);  // pond 2 — bottom-left
+
+    // Zone dividers
     g.lineStyle(1, 0x000000, 0.06);
-    g.moveTo(V_MID * S, 0);      g.lineTo(V_MID * S, WORLD_H);
-    g.moveTo(0, H_MID * S);      g.lineTo(WORLD_W, H_MID * S);
+    g.moveTo(V_MID * S, 0); g.lineTo(V_MID * S, WORLD_H);
+    g.moveTo(0, H_MID * S); g.lineTo(WORLD_W, H_MID * S);
     g.strokePath();
   }
 

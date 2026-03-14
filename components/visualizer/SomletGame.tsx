@@ -11,17 +11,17 @@ export default function SomletGame() {
 
   // ── #8 Track spawned ids — safe across hot reloads ───────────────────────
   const spawnedIds = useRef(new Set<string>());
-  const somlets    = useSomletStore((s) => s.somlets);
-  const spawnChick = useWorldStore((s) => s.spawnChick);
+  const somlets = useSomletStore((s) => s.somlets);
+  const queueSpawn = useWorldStore((s) => s.queueSpawn);
 
   useEffect(() => {
     somlets.forEach((somlet) => {
       if (!spawnedIds.current.has(somlet.id)) {
         spawnedIds.current.add(somlet.id);
-        spawnChick(somlet.event, somlet.id);
+        queueSpawn(somlet.event, somlet.id);
       }
     });
-  }, [somlets, spawnChick]);
+  }, [somlets, queueSpawn]);
 
   // ── Boot Phaser once ─────────────────────────────────────────────────────
   useEffect(() => {
