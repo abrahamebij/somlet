@@ -1,5 +1,9 @@
 import { create } from "zustand";
 
+// ── Config ────────────────────────────────────────────────────────────────────
+
+const EVENTS_PER_CHICK = 40;
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface SomniaEventResult {
@@ -15,22 +19,17 @@ export interface SomniaEvent {
 }
 
 export interface Somlet {
-  id: string;           // unique id — subscription + timestamp
-  event: SomniaEvent;
-  spawnedAt: number;    // Date.now() at spawn time
+  id: string;
+  event: SomniaEvent;   // the 40th event that triggered this chick's spawn
+  spawnedAt: number;
 }
 
 interface SomletStore {
-  // All events received this session
-  events: SomniaEvent[];
-
-  // All live somlets in the world
-  somlets: Somlet[];
-
-  // The somlet the user has clicked on
+  events: SomniaEvent[];       // all raw events, capped at 500
+  somlets: Somlet[];           // one per 40 events
   selectedSomlet: Somlet | null;
+  eventBuffer: number;         // how many events since last spawn
 
-  // Actions
   addEvent: (event: SomniaEvent) => void;
   selectSomlet: (id: string | null) => void;
   clearAll: () => void;
@@ -42,28 +41,35 @@ export const useSomletStore = create<SomletStore>((set, get) => ({
   events: [],
   somlets: [],
   selectedSomlet: null,
+  eventBuffer: 0,
 
   addEvent: (event) => {
-    const somlet: Somlet = {
-      id: `${event.subscription}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      event,
-      spawnedAt: Date.now(),
-    };
+    const { eventBuffer } = get();
+    const nextBuffer = eventBuffer + 1;
+
+    // Every 40th event spawns a chick representing that event
+    const shouldSpawn = nextBuffer >= EVENTS_PER_CHICK;
+
+    const newSomlet: Somlet | null = shouldSpawn
+      ? {
+        id: `${event.subscription}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        event,
+        spawnedAt: Date.now(),
+      }
+      : null;
 
     set((state) => ({
-      events: [event, ...state.events].slice(0, 500), // cap at 500 stored events
-      somlets: [...state.somlets, somlet],
+      events: [event, ...state.events].slice(0, 500),
+      somlets: newSomlet ? [...state.somlets, newSomlet] : state.somlets,
+      eventBuffer: shouldSpawn ? 0 : nextBuffer,
     }));
   },
 
   selectSomlet: (id) => {
-    if (id === null) {
-      set({ selectedSomlet: null });
-      return;
-    }
+    if (id === null) { set({ selectedSomlet: null }); return; }
     const somlet = get().somlets.find((s) => s.id === id) ?? null;
     set({ selectedSomlet: somlet });
   },
 
-  clearAll: () => set({ events: [], somlets: [], selectedSomlet: null }),
+  clearAll: () => set({ events: [], somlets: [], selectedSomlet: null, eventBuffer: 0 }),
 }));
