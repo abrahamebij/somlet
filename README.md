@@ -14,6 +14,9 @@ Inspired by the [Black Mirror](https://www.imdb.com/title/tt2085059/) episode - 
 
 **[https://somlets.vercel.app](https://somlets.vercel.app)**
 
+![2026032417341-ezgif com-optimize](https://github.com/user-attachments/assets/aa0cbe8a-7676-4d7a-80bc-43dc151bc7ea)
+
+
 ---
 
 ## What It Does
